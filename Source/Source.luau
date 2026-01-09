@@ -9289,7 +9289,7 @@ function Compkiller.new(Config : Window)
 			UIListLayout.Parent = Section
 			UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 			UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-			UIListLayout.Padding = UDim.new(0, 5)
+			UIListLayout.Padding = UDim.new(0, 3)
 
 			Header.Name = Compkiller:_RandomString()
 			Header.Parent = Section
