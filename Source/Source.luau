@@ -4700,8 +4700,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		local Tween = TweenInfo.new(0.3, Enum.EasingStyle.Quint);
 		
 		-- Track animation state to prevent conflicts
-		local isAnimating = false;
-		local pendingDelayThread = nil;
+		-- Store pending delay threads per element to properly cancel them
+		local pendingDelayThreads = {}; -- Map of rootElement -> thread
+		local currentToggleState = Config.Default; -- Track the actual toggle state
 
 		-- Function to update visibility of all dependent elements with fade animation
 		local function UpdateDependentElements(isEnabled)
@@ -4710,16 +4711,16 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				return;
 			end
 			
-			-- Cancel any pending delay threads (allow interrupting animations)
-			if pendingDelayThread then
-				task.cancel(pendingDelayThread);
-				pendingDelayThread = nil;
-			end
+			-- Update current state
+			currentToggleState = isEnabled;
 			
-			-- Reset animation flag if it was stuck
-			-- Allow new animations even if previous one didn't complete
-			isAnimating = true;
-			local animationComplete = false;
+			-- Cancel ALL pending delay threads first (critical for spam prevention)
+			for rootElement, thread in pairs(pendingDelayThreads) do
+				if thread then
+					task.cancel(thread);
+				end
+			end
+			pendingDelayThreads = {}; -- Clear all threads
 			
 			for _, data in ipairs(DependentElements) do
 				if not data or not data.element then continue end
@@ -4727,6 +4728,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				local rootElement = data.root
 				if not rootElement then continue end
 				
+				-- Immediately set correct state to prevent race conditions
+				-- If toggle is enabled, ensure element is visible
+				-- If toggle is disabled, ensure element will be hidden
 				if isEnabled then
 					-- FADE IN: Show element via transparency only
 					rootElement.Visible = true
@@ -4815,54 +4819,40 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 						end
 					end
 					
-					-- Hide after fade completes
-					pendingDelayThread = task.delay(0.3, function()
-						if rootElement then
+					-- Hide after fade completes - store thread per element
+					local delayThread = task.delay(0.3, function()
+						-- Double-check toggle state hasn't changed (prevent race condition)
+						if rootElement and currentToggleState == false then
 							rootElement.Visible = false
 							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
-						animationComplete = true;
-						isAnimating = false;
-						pendingDelayThread = nil;
+						-- Remove from pending threads
+						pendingDelayThreads[rootElement] = nil;
 					end)
+					pendingDelayThreads[rootElement] = delayThread;
 				end
-			end
-			
-			-- Reset animation flag after fade completes (for both in and out)
-			if isEnabled then
-				-- Fade in completes immediately (no delay needed)
-				task.delay(0.3, function()
-					animationComplete = true;
-					isAnimating = false;
-				end)
-			else
-				-- Fade out handled by pendingDelayThread above
-				-- But set a safety timeout in case delay fails
-				task.delay(0.5, function()
-					if not animationComplete then
-						isAnimating = false;
-						animationComplete = true;
-					end
-				end)
 			end
 		end;
 
-		-- Debounce to prevent rapid clicking (reduced time)
+		-- Debounce to prevent rapid clicking
 		local lastClickTime = 0;
-		local debounceTime = 0.05; -- 50ms debounce (reduced from 100ms)
+		local debounceTime = 0.1; -- 100ms debounce to prevent spam issues
+		local isProcessingClick = false; -- Prevent concurrent processing
 		
 		Toggle.Input.MouseButton1Click:Connect(function()
 			local currentTime = tick();
 			
-			-- Light debounce for very rapid clicks only
-			if currentTime - lastClickTime < debounceTime then
+			-- Prevent rapid clicks and concurrent processing
+			if isProcessingClick or (currentTime - lastClickTime < debounceTime) then
 				return;
 			end
 			
+			isProcessingClick = true;
 			lastClickTime = currentTime;
 			
-			-- Update toggle state immediately (don't block on animation)
+			-- Update toggle state immediately
 			Config.Default = not Config.Default;
+			currentToggleState = Config.Default; -- Update tracked state immediately
 
 			Toggle.ChangeValue(Config.Default);
 
@@ -4872,6 +4862,11 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			
 			-- Update dependent elements visibility (will handle animation state internally)
 			UpdateDependentElements(Config.Default);
+			
+			-- Allow next click after a short delay
+			task.delay(debounceTime, function()
+				isProcessingClick = false;
+			end);
 		end);
 
 		-- Method to add elements that should be shown when toggle is enabled
@@ -4954,6 +4949,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end;
 
 		function Args:SetValue(value)
+			-- Update tracked state immediately to prevent race conditions
+			currentToggleState = value;
+			
 			-- Don't block SetValue - allow programmatic changes
 			-- Animation state will be handled by UpdateDependentElements
 			
