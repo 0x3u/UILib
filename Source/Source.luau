@@ -4698,9 +4698,25 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		-- Format: {element = element, root = rootElement, originalSize = size}
 		local DependentElements = {};
 		local Tween = TweenInfo.new(0.3, Enum.EasingStyle.Quint);
+		
+		-- Track animation state to prevent conflicts
+		local isAnimating = false;
+		local pendingDelayThread = nil;
 
 		-- Function to update visibility of all dependent elements with fade animation
 		local function UpdateDependentElements(isEnabled)
+			-- Prevent rapid toggling - wait for current animation to finish
+			if isAnimating then
+				return;
+			end
+			
+			-- Cancel any pending delay threads
+			if pendingDelayThread then
+				task.cancel(pendingDelayThread);
+				pendingDelayThread = nil;
+			end
+			
+			isAnimating = true;
 			for _, data in ipairs(DependentElements) do
 				if not data or not data.element then continue end
 				
@@ -4796,17 +4812,44 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 					end
 					
 					-- Hide after fade completes
-					task.delay(0.3, function()
+					pendingDelayThread = task.delay(0.3, function()
 						if rootElement then
 							rootElement.Visible = false
 							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
+						isAnimating = false;
+						pendingDelayThread = nil;
 					end)
 				end
 			end
+			
+			-- Reset animation flag after fade in completes
+			if isEnabled then
+				task.delay(0.3, function()
+					isAnimating = false;
+				end)
+			end
 		end;
 
+		-- Debounce to prevent rapid clicking
+		local lastClickTime = 0;
+		local debounceTime = 0.1; -- 100ms debounce
+		
 		Toggle.Input.MouseButton1Click:Connect(function()
+			local currentTime = tick();
+			
+			-- Debounce rapid clicks
+			if currentTime - lastClickTime < debounceTime then
+				return;
+			end
+			
+			lastClickTime = currentTime;
+			
+			-- Prevent toggling if animation is in progress
+			if isAnimating then
+				return;
+			end
+			
 			Config.Default = not Config.Default;
 
 			Toggle.ChangeValue(Config.Default);
@@ -4885,6 +4928,11 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end;
 
 		function Args:SetValue(value)
+			-- Prevent setting value if animation is in progress
+			if isAnimating then
+				return;
+			end
+			
 			Config.Default = value;
 
 			Toggle.ChangeValue(Config.Default);
