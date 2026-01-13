@@ -5485,6 +5485,60 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		local isEditing = false;
 		local escapeConnection = nil;
 		
+		-- Define StopEditing first so it's available when StartEditing uses it
+		local function StopEditing(applyValue)
+			if not isEditing or not ValueTextBox then return end;
+			
+			isEditing = false;
+			
+			-- Disconnect escape handler
+			if escapeConnection then
+				escapeConnection:Disconnect();
+				escapeConnection = nil;
+			end;
+			
+			if applyValue and ValueTextBox then
+				-- Parse and validate input
+				local inputText = ValueTextBox.Text:gsub(Config.Type, ""):match("^%s*(.-)%s*$"); -- Remove type suffix and trim
+				local numValue = tonumber(inputText);
+				
+				if numValue then
+					-- Clamp value to min/max
+					numValue = math.clamp(numValue, Config.Min, Config.Max);
+					
+					-- Round if needed
+					if Config.Round > 0 then
+						numValue = math.floor((numValue * (10 ^ Config.Round)) + 0.5) / (10 ^ Config.Round);
+					else
+						numValue = math.floor(numValue + 0.5);
+					end;
+					
+					-- Update slider value
+					Config.Default = numValue;
+					ValueText.Text = tostring(Config.Default)..tostring(Config.Type);
+					
+					-- Update slider visual
+					local Size = (Config.Default - Config.Min) / (Config.Max - Config.Min);
+					TweenService:Create(SliderInput, TweenInfo.new(0.2), {
+						Size = UDim2.new(math.clamp(Size, 0.045, 1), 0, 1, 0)
+					}):Play();
+					
+					-- Call callback
+					Config.Callback(Config.Default);
+				end;
+			end;
+			
+			-- Show label again
+			ValueText.Visible = true;
+			
+			-- Remove TextBox
+			if ValueTextBox then
+				ValueTextBox:Destroy();
+				ValueTextBox = nil;
+			end;
+		end;
+		
+		-- Now define StartEditing after StopEditing so it can use StopEditing
 		local function StartEditing()
 			if isEditing or not Signal:GetValue() then return end;
 			
@@ -5570,58 +5624,6 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 					end;
 				end;
 			end);
-		end;
-		
-		local function StopEditing(applyValue)
-			if not isEditing or not ValueTextBox then return end;
-			
-			isEditing = false;
-			
-			-- Disconnect escape handler
-			if escapeConnection then
-				escapeConnection:Disconnect();
-				escapeConnection = nil;
-			end;
-			
-			if applyValue and ValueTextBox then
-				-- Parse and validate input
-				local inputText = ValueTextBox.Text:gsub(Config.Type, ""):match("^%s*(.-)%s*$"); -- Remove type suffix and trim
-				local numValue = tonumber(inputText);
-				
-				if numValue then
-					-- Clamp value to min/max
-					numValue = math.clamp(numValue, Config.Min, Config.Max);
-					
-					-- Round if needed
-					if Config.Round > 0 then
-						numValue = math.floor((numValue * (10 ^ Config.Round)) + 0.5) / (10 ^ Config.Round);
-					else
-						numValue = math.floor(numValue + 0.5);
-					end;
-					
-					-- Update slider value
-					Config.Default = numValue;
-					ValueText.Text = tostring(Config.Default)..tostring(Config.Type);
-					
-					-- Update slider visual
-					local Size = (Config.Default - Config.Min) / (Config.Max - Config.Min);
-					TweenService:Create(SliderInput, TweenInfo.new(0.2), {
-						Size = UDim2.new(math.clamp(Size, 0.045, 1), 0, 1, 0)
-					}):Play();
-					
-					-- Call callback
-					Config.Callback(Config.Default);
-				end;
-			end;
-			
-			-- Show label again
-			ValueText.Visible = true;
-			
-			-- Remove TextBox
-			if ValueTextBox then
-				ValueTextBox:Destroy();
-				ValueTextBox = nil;
-			end;
 		end;
 		
 		-- Click on ValueText to edit (works for both mouse and touch)
