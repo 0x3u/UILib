@@ -5470,6 +5470,119 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			Property = 'TextColor3'
 		});
 
+		-- Click-to-edit functionality for slider value
+		local ValueTextBox = nil;
+		local isEditing = false;
+		
+		local function StartEditing()
+			if isEditing or not Signal:GetValue() then return end;
+			
+			isEditing = true;
+			
+			-- Create TextBox overlay
+			ValueTextBox = Instance.new("TextBox");
+			ValueTextBox.Name = Compkiller:_RandomString();
+			ValueTextBox.Parent = ValueText.Parent;
+			ValueTextBox.AnchorPoint = ValueText.AnchorPoint;
+			ValueTextBox.Position = ValueText.Position;
+			ValueTextBox.Size = ValueText.Size;
+			ValueTextBox.ZIndex = ValueText.ZIndex + 1;
+			ValueTextBox.BackgroundTransparency = 1;
+			ValueTextBox.BorderSizePixel = 0;
+			ValueTextBox.Font = ValueText.Font;
+			ValueTextBox.TextSize = ValueText.TextSize;
+			ValueTextBox.TextColor3 = ValueText.TextColor3;
+			ValueTextBox.TextXAlignment = Enum.TextXAlignment.Right;
+			ValueTextBox.Text = tostring(Config.Default);
+			ValueTextBox.ClearTextOnFocus = false;
+			ValueTextBox.TextTransparency = ValueText.TextTransparency;
+			
+			-- Add to color system
+			table.insert(Compkiller.Elements.SwitchColor, {
+				Element = ValueTextBox,
+				Property = 'TextColor3'
+			});
+			
+			-- Hide the label
+			ValueText.Visible = false;
+			
+			-- Connect TextBox events
+			ValueTextBox.FocusLost:Connect(function(enterPressed)
+				StopEditing(true); -- Apply value when focus is lost (Enter or click away)
+			end);
+			
+			-- Handle Escape key to cancel
+			local escapeConnection;
+			escapeConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+				if gameProcessed then return end;
+				if input.KeyCode == Enum.KeyCode.Escape and ValueTextBox and ValueTextBox:IsFocused() then
+					StopEditing(false); -- Cancel without applying
+					if escapeConnection then
+						escapeConnection:Disconnect();
+					end;
+				end;
+			end);
+			
+			-- Focus the TextBox
+			task.spawn(function()
+				task.wait();
+				ValueTextBox:CaptureFocus();
+				task.wait();
+				ValueTextBox:SelectAll();
+			end);
+		end;
+		
+		local function StopEditing(applyValue)
+			if not isEditing or not ValueTextBox then return end;
+			
+			isEditing = false;
+			
+			if applyValue then
+				-- Parse and validate input
+				local inputText = ValueTextBox.Text:gsub(Config.Type, ""):match("^%s*(.-)%s*$"); -- Remove type suffix and trim
+				local numValue = tonumber(inputText);
+				
+				if numValue then
+					-- Clamp value to min/max
+					numValue = math.clamp(numValue, Config.Min, Config.Max);
+					
+					-- Round if needed
+					if Config.Round > 0 then
+						numValue = math.floor((numValue * (10 ^ Config.Round)) + 0.5) / (10 ^ Config.Round);
+					else
+						numValue = math.floor(numValue + 0.5);
+					end;
+					
+					-- Update slider value
+					Config.Default = numValue;
+					ValueText.Text = tostring(Config.Default)..tostring(Config.Type);
+					
+					-- Update slider visual
+					local Size = (Config.Default - Config.Min) / (Config.Max - Config.Min);
+					TweenService:Create(SliderInput, TweenInfo.new(0.2), {
+						Size = UDim2.new(math.clamp(Size, 0.045, 1), 0, 1, 0)
+					}):Play();
+					
+					-- Call callback
+					Config.Callback(Config.Default);
+				end;
+			end;
+			
+			-- Show label again
+			ValueText.Visible = true;
+			
+			-- Remove TextBox
+			if ValueTextBox then
+				ValueTextBox:Destroy();
+				ValueTextBox = nil;
+			end;
+		end;
+		
+		-- Click on ValueText to edit (works for both mouse and touch)
+		Compkiller:_Input(ValueText, function()
+			StartEditing();
+		end);
+
 		Compkiller:_Hover(SliderBar,function()
 			if Signal:GetValue() then
 				Compkiller:_Animation(ValueText,TweenInfo.new(0.2),{
