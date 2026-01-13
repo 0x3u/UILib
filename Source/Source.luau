@@ -4708,32 +4708,51 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				if not rootElement then continue end
 				
 				if isEnabled then
-					-- FADE IN: Show element
+					-- FADE IN: Show element via transparency only
 					rootElement.Visible = true
-					rootElement.Size = UDim2.new(1, 0, 0, 0) -- Start at size 0 for smooth fade in
+					rootElement.Size = data.originalSize -- Keep original size, no size animation
 					
-					-- Animate size from 0 to original size (section will resize automatically via UIListLayout)
-					Compkiller:_Animation(rootElement, Tween, {
-						Size = data.originalSize
-					})
-					
-					-- Fade in text and UI elements
+					-- Fade in all visual elements via transparency
 					for _, child in ipairs(rootElement:GetDescendants()) do
 						if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-							child.TextTransparency = 1
+							child.TextTransparency = 1 -- Start fully transparent
+							local originalTrans = child:GetAttribute("OriginalTextTrans")
+							if not originalTrans then
+								originalTrans = child.TextTransparency
+								child:SetAttribute("OriginalTextTrans", originalTrans)
+							end
 							Compkiller:_Animation(child, Tween, {
-								TextTransparency = (child:GetAttribute("OriginalTextTrans") or 0)
+								TextTransparency = originalTrans
 							})
 						elseif child:IsA("UIStroke") then
-							child.Transparency = 1
+							child.Transparency = 1 -- Start fully transparent
 							Compkiller:_Animation(child, Tween, {
 								Transparency = 0
 							})
+						elseif child:IsA("Frame") or child:IsA("ImageButton") or child:IsA("ImageLabel") then
+							if child.BackgroundTransparency ~= 1 then
+								if not child:GetAttribute("OriginalBGTrans") then
+									child:SetAttribute("OriginalBGTrans", child.BackgroundTransparency)
+								end
+								child.BackgroundTransparency = 1 -- Start fully transparent
+								Compkiller:_Animation(child, Tween, {
+									BackgroundTransparency = child:GetAttribute("OriginalBGTrans")
+								})
+							end
+							if child:IsA("ImageLabel") or child:IsA("ImageButton") then
+								if not child:GetAttribute("OriginalImageTrans") then
+									child:SetAttribute("OriginalImageTrans", child.ImageTransparency)
+								end
+								child.ImageTransparency = 1
+								Compkiller:_Animation(child, Tween, {
+									ImageTransparency = child:GetAttribute("OriginalImageTrans")
+								})
+							end
 						end
 					end
 				else
-					-- FADE OUT: Hide element
-					-- Fade out text and UI elements first
+					-- FADE OUT: Hide element via transparency only
+					-- Fade out all visual elements
 					for _, child in ipairs(rootElement:GetDescendants()) do
 						if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
 							if not child:GetAttribute("OriginalTextTrans") then
@@ -4746,18 +4765,31 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							Compkiller:_Animation(child, Tween, {
 								Transparency = 1
 							})
+						elseif child:IsA("Frame") or child:IsA("ImageButton") or child:IsA("ImageLabel") then
+							if child.BackgroundTransparency ~= 1 then
+								if not child:GetAttribute("OriginalBGTrans") then
+									child:SetAttribute("OriginalBGTrans", child.BackgroundTransparency)
+								end
+								Compkiller:_Animation(child, Tween, {
+									BackgroundTransparency = 1
+								})
+							end
+							if child:IsA("ImageLabel") or child:IsA("ImageButton") then
+								if not child:GetAttribute("OriginalImageTrans") then
+									child:SetAttribute("OriginalImageTrans", child.ImageTransparency)
+								end
+								Compkiller:_Animation(child, Tween, {
+									ImageTransparency = 1
+								})
+							end
 						end
 					end
 					
-					-- Animate size to 0 (this makes section resize automatically)
-					Compkiller:_Animation(rootElement, Tween, {
-						Size = UDim2.new(1, 0, 0, 0)
-					})
-					
-					-- Hide after animation completes
+					-- Hide after fade completes
 					task.delay(0.3, function()
 						if rootElement then
 							rootElement.Visible = false
+							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
 					end)
 				end
@@ -4802,6 +4834,31 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							root = rootElement,
 							originalSize = originalSize
 						});
+						
+						-- If toggle starts OFF, immediately hide element (no animation)
+						-- This prevents elements from taking up space initially
+						if not Config.Default then
+							rootElement.Visible = false
+							rootElement.Size = UDim2.new(1, 0, 0, 0)
+							-- Set all children to fully transparent
+							for _, child in ipairs(rootElement:GetDescendants()) do
+								if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+									child:SetAttribute("OriginalTextTrans", child.TextTransparency)
+									child.TextTransparency = 1
+								elseif child:IsA("UIStroke") then
+									child.Transparency = 1
+								elseif child:IsA("Frame") or child:IsA("ImageButton") or child:IsA("ImageLabel") then
+									if child.BackgroundTransparency ~= 1 then
+										child:SetAttribute("OriginalBGTrans", child.BackgroundTransparency)
+										child.BackgroundTransparency = 1
+									end
+									if child:IsA("ImageLabel") or child:IsA("ImageButton") then
+										child:SetAttribute("OriginalImageTrans", child.ImageTransparency)
+										child.ImageTransparency = 1
+									end
+								end
+							end
+						end
 					end
 				end
 			end
@@ -4809,7 +4866,10 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			-- Use task.wait to ensure elements are fully initialized
 			task.spawn(function()
 				task.wait() -- Wait one frame to ensure elements are created
-				UpdateDependentElements(Config.Default);
+				-- Only animate if toggle is ON, otherwise already hidden
+				if Config.Default then
+					UpdateDependentElements(Config.Default);
+				end
 			end);
 			return Args;
 		end;
