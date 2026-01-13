@@ -4692,6 +4692,7 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		local Args = {};
 
 		Args.Flag = Config.Flag;
+		Args.Root = Block.Root; -- Expose Root for ShowWhenEnabled functionality
 		
 		-- Table to store elements that should be shown/hidden based on toggle state
 		local DependentElements = {};
@@ -4699,26 +4700,26 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		-- Function to update visibility of all dependent elements
 		local function UpdateDependentElements(isEnabled)
 			for _, element in ipairs(DependentElements) do
-				if element and typeof(element) == "table" then
-					-- Check if element has SetVisible method (for blocks)
-					if element.SetVisible then
-						element:SetVisible(isEnabled);
-					-- Check if element has Signal property (for elements with visibility signals)
-					elseif element.Signal then
-						-- Elements with Signal property typically control their own visibility
-						-- We can connect to it or use a different approach
-						if element.Root and element.Root:IsA("GuiObject") then
-							element.Root.Visible = isEnabled;
-						end
-					-- Check if element has Root property (for dropdowns and other direct instances)
-					elseif element.Root and element.Root:IsA("GuiObject") then
-						element.Root.Visible = isEnabled;
-					-- If it's a direct Instance, hide/show it directly
-					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
-						element.Visible = isEnabled;
+				if not element then continue end
+				
+				-- Try to get the root UI element
+				local rootElement = nil
+				
+				if typeof(element) == "table" then
+					-- Check if element has Root property (most common)
+					if element.Root and element.Root:IsA("GuiObject") then
+						rootElement = element.Root
+					-- Check if element is a Block with Root
+					elseif element.Root and typeof(element.Root) == "Instance" then
+						rootElement = element.Root
 					end
 				elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
-					element.Visible = isEnabled;
+					rootElement = element
+				end
+				
+				-- Hide/show the root element
+				if rootElement then
+					rootElement.Visible = isEnabled
 				end
 			end
 		end;
@@ -4742,19 +4743,10 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			for _, element in ipairs(elements) do
 				if element then
 					table.insert(DependentElements, element);
-					-- Set initial visibility based on current toggle state
-					local isEnabled = Config.Default;
-					if element and typeof(element) == "table" then
-						if element.SetVisible then
-							element:SetVisible(isEnabled);
-						elseif element.Root and element.Root:IsA("GuiObject") then
-							element.Root.Visible = isEnabled;
-						end
-					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
-						element.Visible = isEnabled;
-					end
 				end
 			end
+			-- Set initial visibility based on current toggle state
+			UpdateDependentElements(Config.Default);
 			return Args;
 		end;
 
