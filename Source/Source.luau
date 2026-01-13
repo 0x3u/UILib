@@ -4715,12 +4715,14 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 					-- Fade in all visual elements via transparency
 					for _, child in ipairs(rootElement:GetDescendants()) do
 						if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-							child.TextTransparency = 1 -- Start fully transparent
+							-- Store original transparency once (before we override it)
 							local originalTrans = child:GetAttribute("OriginalTextTrans")
-							if not originalTrans then
+							if originalTrans == nil then
 								originalTrans = child.TextTransparency
 								child:SetAttribute("OriginalTextTrans", originalTrans)
 							end
+							-- Start fully transparent then tween back to original
+							child.TextTransparency = 1
 							Compkiller:_Animation(child, Tween, {
 								TextTransparency = originalTrans
 							})
@@ -4730,22 +4732,30 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 								Transparency = 0
 							})
 						elseif child:IsA("Frame") or child:IsA("ImageButton") or child:IsA("ImageLabel") then
-							if child.BackgroundTransparency ~= 1 then
-								if not child:GetAttribute("OriginalBGTrans") then
-									child:SetAttribute("OriginalBGTrans", child.BackgroundTransparency)
-								end
-								child.BackgroundTransparency = 1 -- Start fully transparent
-								Compkiller:_Animation(child, Tween, {
-									BackgroundTransparency = child:GetAttribute("OriginalBGTrans")
-								})
+							-- Store original background transparency once
+							local originalBG = child:GetAttribute("OriginalBGTrans")
+							if originalBG == nil then
+								originalBG = child.BackgroundTransparency
+								child:SetAttribute("OriginalBGTrans", originalBG)
 							end
+
+							-- Start fully transparent then tween back to original
+							child.BackgroundTransparency = 1
+							Compkiller:_Animation(child, Tween, {
+								BackgroundTransparency = originalBG
+							})
+
+							-- Image transparency for image elements
 							if child:IsA("ImageLabel") or child:IsA("ImageButton") then
-								if not child:GetAttribute("OriginalImageTrans") then
-									child:SetAttribute("OriginalImageTrans", child.ImageTransparency)
+								local originalImage = child:GetAttribute("OriginalImageTrans")
+								if originalImage == nil then
+									originalImage = child.ImageTransparency
+									child:SetAttribute("OriginalImageTrans", originalImage)
 								end
+
 								child.ImageTransparency = 1
 								Compkiller:_Animation(child, Tween, {
-									ImageTransparency = child:GetAttribute("OriginalImageTrans")
+									ImageTransparency = originalImage
 								})
 							end
 						end
