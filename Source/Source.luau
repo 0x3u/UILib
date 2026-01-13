@@ -1519,117 +1519,6 @@ function Compkiller:_Animation(Self: Instance , Info: TweenInfo , Property :{[K]
 	return Tween;
 end;
 
-function Compkiller:_AddSnowflakeParticles(SectionFrame: Frame)
-	-- Particle system for falling snowflakes on section backgrounds
-	local MAX_PARTICLES = 80;
-	local particles = {};
-	local particleContainer = Instance.new("Frame");
-	particleContainer.Name = Compkiller:_RandomString();
-	particleContainer.Parent = SectionFrame;
-	particleContainer.BackgroundTransparency = 1;
-	particleContainer.BorderSizePixel = 0;
-	particleContainer.Size = UDim2.new(1, 0, 1, 0);
-	particleContainer.ZIndex = SectionFrame.ZIndex - 1; -- Behind section content
-	particleContainer.ClipsDescendants = true;
-	
-	-- Initialize particles
-	local function initializeParticles()
-		local absSize = SectionFrame.AbsoluteSize;
-		if absSize.X <= 0 or absSize.Y <= 0 then
-			return; -- Wait for section to be sized
-		end
-		
-		for i = 1, MAX_PARTICLES do
-			local particle = Instance.new("TextLabel");
-			particle.Name = Compkiller:_RandomString();
-			particle.Parent = particleContainer;
-			particle.BackgroundTransparency = 1;
-			particle.BorderSizePixel = 0;
-			particle.Text = "•"; -- Snowflake character
-			particle.TextColor3 = Color3.fromRGB(255, 255, 255);
-			particle.TextSize = math.random(3, 8);
-			particle.TextTransparency = math.random(20, 60) / 100;
-			particle.Font = Enum.Font.Gotham;
-			particle.TextXAlignment = Enum.TextXAlignment.Center;
-			particle.TextYAlignment = Enum.TextYAlignment.Center;
-			particle.Size = UDim2.new(0, particle.TextSize, 0, particle.TextSize);
-			particle.ZIndex = particleContainer.ZIndex;
-			
-			-- Random starting position
-			particle.Position = UDim2.new(
-				0, math.random(0, math.max(1, absSize.X)),
-				0, math.random(0, math.max(1, absSize.Y))
-			);
-			
-			-- Particle data
-			local particleData = {
-				instance = particle,
-				velocity = -(math.random(20, 100) / 100.0 + 0.2), -- Falling speed (negative = down)
-				size = particle.TextSize,
-				life = 1.0
-			};
-			
-			table.insert(particles, particleData);
-		end
-	end;
-	
-	-- Update particles
-	local connection;
-	connection = RunService.Heartbeat:Connect(function(deltaTime)
-		if not SectionFrame.Parent or not SectionFrame:IsDescendantOf(game) then
-			connection:Disconnect();
-			for _, particleData in ipairs(particles) do
-				if particleData.instance then
-					particleData.instance:Destroy();
-				end
-			end
-			particleContainer:Destroy();
-			return;
-		end
-		
-		local absSize = SectionFrame.AbsoluteSize;
-		local absPos = SectionFrame.AbsolutePosition;
-		
-		for _, particleData in ipairs(particles) do
-			local particle = particleData.instance;
-			if particle and particle.Parent then
-				-- Update position (falling down)
-				local currentPos = particle.Position;
-				local newY = currentPos.Y.Offset + (particleData.velocity * deltaTime * 60.0);
-				
-				-- Wrap around when particle goes off screen
-				if newY < 0 then
-					newY = absSize.Y;
-					particle.Position = UDim2.new(
-						0, math.random(0, math.max(1, absSize.X)),
-						0, newY
-					);
-				elseif newY > absSize.Y then
-					newY = 0;
-					particle.Position = UDim2.new(
-						0, math.random(0, math.max(1, absSize.X)),
-						0, newY
-					);
-				else
-					particle.Position = UDim2.new(currentPos.X.Scale, currentPos.X.Offset, currentPos.Y.Scale, newY);
-				end
-			end
-		end
-	end);
-	
-	-- Initialize particles after section is sized
-	task.spawn(function()
-		-- Wait for section to have size
-		while SectionFrame.AbsoluteSize.X <= 0 or SectionFrame.AbsoluteSize.Y <= 0 do
-			task.wait(0.1);
-		end
-		task.wait(0.1); -- Extra delay to ensure layout is stable
-		initializeParticles();
-	end);
-	
-	return connection;
-end;
-
 function Compkiller:_Input(Frame : Frame , Callback : () -> ()) : TextButton
 	local Button = Instance.new('TextButton',Frame);
 
@@ -9749,9 +9638,6 @@ function Compkiller.new(Config : Window)
 
 			UICorner.CornerRadius = UDim.new(0, 6)
 			UICorner.Parent = Section
-			
-			-- Add snowflake particle background effect
-			Compkiller:_AddSnowflakeParticles(Section);
 
 			UIStroke.Color = Compkiller.Colors.StrokeColor
 			UIStroke.Parent = Section
