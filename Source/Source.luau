@@ -4697,11 +4697,66 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			Block:SetTransparency((Config.Default and 0.1) or 0.3);
 
 			Config.Callback(Config.Default);
+			
+			-- Update dependent elements visibility
+			UpdateDependentElements(Config.Default);
 		end);
 
 		local Args = {};
 
 		Args.Flag = Config.Flag;
+		
+		-- Table to store elements that should be shown/hidden based on toggle state
+		local DependentElements = {};
+
+		-- Function to update visibility of all dependent elements
+		local function UpdateDependentElements(isEnabled)
+			for _, element in ipairs(DependentElements) do
+				if element and typeof(element) == "table" then
+					-- Check if element has SetVisible method (for blocks)
+					if element.SetVisible then
+						element:SetVisible(isEnabled);
+					-- Check if element has Signal property (for elements with visibility signals)
+					elseif element.Signal then
+						-- Elements with Signal property typically control their own visibility
+						-- We can connect to it or use a different approach
+						if element.Root and element.Root:IsA("GuiObject") then
+							element.Root.Visible = isEnabled;
+						end
+					-- Check if element has Root property (for dropdowns and other direct instances)
+					elseif element.Root and element.Root:IsA("GuiObject") then
+						element.Root.Visible = isEnabled;
+					-- If it's a direct Instance, hide/show it directly
+					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
+						element.Visible = isEnabled;
+					end
+				elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
+					element.Visible = isEnabled;
+				end
+			end
+		end;
+
+		-- Method to add elements that should be shown when toggle is enabled
+		function Args:ShowWhenEnabled(...)
+			local elements = {...};
+			for _, element in ipairs(elements) do
+				if element then
+					table.insert(DependentElements, element);
+					-- Set initial visibility based on current toggle state
+					local isEnabled = Config.Default;
+					if element and typeof(element) == "table" then
+						if element.SetVisible then
+							element:SetVisible(isEnabled);
+						elseif element.Root and element.Root:IsA("GuiObject") then
+							element.Root.Visible = isEnabled;
+						end
+					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
+						element.Visible = isEnabled;
+					end
+				end
+			end
+			return Args;
+		end;
 
 		function Args:SetValue(value)
 			Config.Default = value;
@@ -4711,6 +4766,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			Block:SetTransparency((Config.Default and 0.1) or 0.3);
 
 			Config.Callback(Config.Default);
+			
+			-- Update dependent elements visibility
+			UpdateDependentElements(Config.Default);
 		end;
 
 		Args.Signal = Signal:Connect(function(bool)
@@ -5408,6 +5466,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		function Args:GetValue()
 			return Config.Default;
 		end;
+		
+		-- Add Root property for ShowWhenEnabled functionality
+		Args.Root = Slider;
 
 		if Config.Flag then
 			Compkiller.Flags[Config.Flag] = Args;
@@ -6115,6 +6176,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			end,
 			Root = Dropdown
 		});
+		
+		-- Add Root property for ShowWhenEnabled functionality
+		Args.Root = Dropdown;
 
 		function Args:GetValue()
 			return Config.Default;
