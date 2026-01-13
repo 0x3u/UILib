@@ -4695,31 +4695,71 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		Args.Root = Block.Root; -- Expose Root for ShowWhenEnabled functionality
 		
 		-- Table to store elements that should be shown/hidden based on toggle state
+		-- Format: {element = element, root = rootElement, originalSize = size}
 		local DependentElements = {};
+		local Tween = TweenInfo.new(0.3, Enum.EasingStyle.Quint);
 
-		-- Function to update visibility of all dependent elements
+		-- Function to update visibility of all dependent elements with fade animation
 		local function UpdateDependentElements(isEnabled)
-			for _, element in ipairs(DependentElements) do
-				if not element then continue end
+			for _, data in ipairs(DependentElements) do
+				if not data or not data.element then continue end
 				
-				-- Try to get the root UI element
-				local rootElement = nil
+				local rootElement = data.root
+				if not rootElement then continue end
 				
-				if typeof(element) == "table" then
-					-- Check if element has Root property (most common)
-					if element.Root and element.Root:IsA("GuiObject") then
-						rootElement = element.Root
-					-- Check if element is a Block with Root
-					elseif element.Root and typeof(element.Root) == "Instance" then
-						rootElement = element.Root
+				if isEnabled then
+					-- FADE IN: Show element
+					rootElement.Visible = true
+					rootElement.Size = UDim2.new(1, 0, 0, 0) -- Start at size 0 for smooth fade in
+					
+					-- Animate size from 0 to original size (section will resize automatically via UIListLayout)
+					Compkiller:_Animation(rootElement, Tween, {
+						Size = data.originalSize
+					})
+					
+					-- Fade in text and UI elements
+					for _, child in ipairs(rootElement:GetDescendants()) do
+						if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+							child.TextTransparency = 1
+							Compkiller:_Animation(child, Tween, {
+								TextTransparency = (child:GetAttribute("OriginalTextTrans") or 0)
+							})
+						elseif child:IsA("UIStroke") then
+							child.Transparency = 1
+							Compkiller:_Animation(child, Tween, {
+								Transparency = 0
+							})
+						end
 					end
-				elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
-					rootElement = element
-				end
-				
-				-- Hide/show the root element
-				if rootElement then
-					rootElement.Visible = isEnabled
+				else
+					-- FADE OUT: Hide element
+					-- Fade out text and UI elements first
+					for _, child in ipairs(rootElement:GetDescendants()) do
+						if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+							if not child:GetAttribute("OriginalTextTrans") then
+								child:SetAttribute("OriginalTextTrans", child.TextTransparency)
+							end
+							Compkiller:_Animation(child, Tween, {
+								TextTransparency = 1
+							})
+						elseif child:IsA("UIStroke") then
+							Compkiller:_Animation(child, Tween, {
+								Transparency = 1
+							})
+						end
+					end
+					
+					-- Animate size to 0 (this makes section resize automatically)
+					Compkiller:_Animation(rootElement, Tween, {
+						Size = UDim2.new(1, 0, 0, 0)
+					})
+					
+					-- Hide after animation completes
+					task.delay(0.3, function()
+						if rootElement then
+							rootElement.Visible = false
+						end
+					end)
 				end
 			end
 		end;
@@ -4742,11 +4782,35 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			local elements = {...};
 			for _, element in ipairs(elements) do
 				if element then
-					table.insert(DependentElements, element);
+					-- Get root element and store original size
+					local rootElement = nil
+					local originalSize = nil
+					
+					if typeof(element) == "table" then
+						if element.Root and element.Root:IsA("GuiObject") then
+							rootElement = element.Root
+							originalSize = rootElement.Size
+						end
+					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
+						rootElement = element
+						originalSize = rootElement.Size
+					end
+					
+					if rootElement then
+						table.insert(DependentElements, {
+							element = element,
+							root = rootElement,
+							originalSize = originalSize
+						});
+					end
 				end
 			end
 			-- Set initial visibility based on current toggle state
-			UpdateDependentElements(Config.Default);
+			-- Use task.wait to ensure elements are fully initialized
+			task.spawn(function()
+				task.wait() -- Wait one frame to ensure elements are created
+				UpdateDependentElements(Config.Default);
+			end);
 			return Args;
 		end;
 
