@@ -4705,18 +4705,22 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 
 		-- Function to update visibility of all dependent elements with fade animation
 		local function UpdateDependentElements(isEnabled)
-			-- Prevent rapid toggling - wait for current animation to finish
-			if isAnimating then
+			-- If no dependent elements, nothing to do
+			if #DependentElements == 0 then
 				return;
 			end
 			
-			-- Cancel any pending delay threads
+			-- Cancel any pending delay threads (allow interrupting animations)
 			if pendingDelayThread then
 				task.cancel(pendingDelayThread);
 				pendingDelayThread = nil;
 			end
 			
+			-- Reset animation flag if it was stuck
+			-- Allow new animations even if previous one didn't complete
 			isAnimating = true;
+			local animationComplete = false;
+			
 			for _, data in ipairs(DependentElements) do
 				if not data or not data.element then continue end
 				
@@ -4817,39 +4821,47 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							rootElement.Visible = false
 							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
+						animationComplete = true;
 						isAnimating = false;
 						pendingDelayThread = nil;
 					end)
 				end
 			end
 			
-			-- Reset animation flag after fade in completes
+			-- Reset animation flag after fade completes (for both in and out)
 			if isEnabled then
+				-- Fade in completes immediately (no delay needed)
 				task.delay(0.3, function()
+					animationComplete = true;
 					isAnimating = false;
+				end)
+			else
+				-- Fade out handled by pendingDelayThread above
+				-- But set a safety timeout in case delay fails
+				task.delay(0.5, function()
+					if not animationComplete then
+						isAnimating = false;
+						animationComplete = true;
+					end
 				end)
 			end
 		end;
 
-		-- Debounce to prevent rapid clicking
+		-- Debounce to prevent rapid clicking (reduced time)
 		local lastClickTime = 0;
-		local debounceTime = 0.1; -- 100ms debounce
+		local debounceTime = 0.05; -- 50ms debounce (reduced from 100ms)
 		
 		Toggle.Input.MouseButton1Click:Connect(function()
 			local currentTime = tick();
 			
-			-- Debounce rapid clicks
+			-- Light debounce for very rapid clicks only
 			if currentTime - lastClickTime < debounceTime then
 				return;
 			end
 			
 			lastClickTime = currentTime;
 			
-			-- Prevent toggling if animation is in progress
-			if isAnimating then
-				return;
-			end
-			
+			-- Update toggle state immediately (don't block on animation)
 			Config.Default = not Config.Default;
 
 			Toggle.ChangeValue(Config.Default);
@@ -4858,7 +4870,7 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 
 			Config.Callback(Config.Default);
 			
-			-- Update dependent elements visibility
+			-- Update dependent elements visibility (will handle animation state internally)
 			UpdateDependentElements(Config.Default);
 		end);
 
@@ -4928,10 +4940,8 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end;
 
 		function Args:SetValue(value)
-			-- Prevent setting value if animation is in progress
-			if isAnimating then
-				return;
-			end
+			-- Don't block SetValue - allow programmatic changes
+			-- Animation state will be handled by UpdateDependentElements
 			
 			Config.Default = value;
 
