@@ -4875,8 +4875,22 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end);
 
 		-- Method to add elements that should be shown when toggle is enabled
+		-- You can pass multiple elements: ShowWhenEnabled(toggle1, toggle2, slider1)
+		-- Or pass a table: ShowWhenEnabled({toggle1, toggle2, slider1})
+		-- Or chain calls: ShowWhenEnabled(toggle1):ShowWhenEnabled(toggle2)
 		function Args:ShowWhenEnabled(...)
 			local elements = {...};
+			
+			-- If first argument is a table (array), use that instead
+			-- Check if it's an array table (has numeric indices) vs object table
+			if #elements == 1 and typeof(elements[1]) == "table" then
+				local firstArg = elements[1];
+				-- Check if it's an array (has numeric keys) and not an element object (has Root property)
+				if #firstArg > 0 and not firstArg.Root then
+					elements = firstArg;
+				end;
+			end;
+			
 			for _, element in ipairs(elements) do
 				if element then
 					-- Get root element and store original size
@@ -5148,6 +5162,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end);
 
 		Args.Link = Compkiller:_LoadOption(Block);
+		
+		-- Add Root property for ShowWhenEnabled functionality
+		Args.Root = Block.Root;
 
 		function Args:GetValue()
 			return {
