@@ -4689,19 +4689,6 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 
 		local Toggle = Block:AddLink('Toggle' , Config.Default);
 
-		Toggle.Input.MouseButton1Click:Connect(function()
-			Config.Default = not Config.Default;
-
-			Toggle.ChangeValue(Config.Default);
-
-			Block:SetTransparency((Config.Default and 0.1) or 0.3);
-
-			Config.Callback(Config.Default);
-			
-			-- Update dependent elements visibility
-			UpdateDependentElements(Config.Default);
-		end);
-
 		local Args = {};
 
 		Args.Flag = Config.Flag;
@@ -4735,6 +4722,19 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				end
 			end
 		end;
+
+		Toggle.Input.MouseButton1Click:Connect(function()
+			Config.Default = not Config.Default;
+
+			Toggle.ChangeValue(Config.Default);
+
+			Block:SetTransparency((Config.Default and 0.1) or 0.3);
+
+			Config.Callback(Config.Default);
+			
+			-- Update dependent elements visibility
+			UpdateDependentElements(Config.Default);
+		end);
 
 		-- Method to add elements that should be shown when toggle is enabled
 		function Args:ShowWhenEnabled(...)
