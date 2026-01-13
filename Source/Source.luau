@@ -5483,6 +5483,7 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		-- Click-to-edit functionality for slider value
 		local ValueTextBox = nil;
 		local isEditing = false;
+		local escapeConnection = nil;
 		
 		local function StartEditing()
 			if isEditing or not Signal:GetValue() then return end;
@@ -5507,38 +5508,67 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			ValueTextBox.ClearTextOnFocus = false;
 			ValueTextBox.TextTransparency = ValueText.TextTransparency;
 			
+			-- Store original text color for hover effect
+			local originalTextColor = ValueText.TextColor3;
+			
 			-- Add to color system
 			table.insert(Compkiller.Elements.SwitchColor, {
 				Element = ValueTextBox,
 				Property = 'TextColor3'
 			});
 			
+			-- Hover effect - subtle highlight
+			Compkiller:_Hover(ValueTextBox, function()
+				-- Hover in - subtle highlight
+				if ValueTextBox and ValueTextBox.Parent then
+					Compkiller:_Animation(ValueTextBox, TweenInfo.new(0.2), {
+						TextColor3 = Compkiller.Colors.Highlight
+					});
+				end;
+			end, function()
+				-- Hover out - back to original
+				if ValueTextBox and ValueTextBox.Parent then
+					Compkiller:_Animation(ValueTextBox, TweenInfo.new(0.2), {
+						TextColor3 = originalTextColor
+					});
+				end;
+			end);
+			
 			-- Hide the label
 			ValueText.Visible = false;
 			
 			-- Connect TextBox events
-			ValueTextBox.FocusLost:Connect(function(enterPressed)
-				StopEditing(true); -- Apply value when focus is lost (Enter or click away)
-			end);
+			if ValueTextBox then
+				ValueTextBox.FocusLost:Connect(function(enterPressed)
+					if ValueTextBox and ValueTextBox.Parent then
+						StopEditing(true); -- Apply value when focus is lost
+					end;
+				end);
+			end;
 			
 			-- Handle Escape key to cancel
-			local escapeConnection;
+			if escapeConnection then
+				escapeConnection:Disconnect();
+			end;
 			escapeConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 				if gameProcessed then return end;
-				if input.KeyCode == Enum.KeyCode.Escape and ValueTextBox and ValueTextBox:IsFocused() then
+				if input.KeyCode == Enum.KeyCode.Escape and ValueTextBox and ValueTextBox.Parent and ValueTextBox:IsFocused() then
 					StopEditing(false); -- Cancel without applying
-					if escapeConnection then
-						escapeConnection:Disconnect();
-					end;
 				end;
 			end);
 			
-			-- Focus the TextBox
+			-- Focus the TextBox and select text manually (SelectAll doesn't exist in Roblox)
 			task.spawn(function()
-				task.wait();
-				ValueTextBox:CaptureFocus();
-				task.wait();
-				ValueTextBox:SelectAll();
+				task.wait(0.1);
+				if ValueTextBox and ValueTextBox.Parent then
+					ValueTextBox:CaptureFocus();
+					task.wait(0.05);
+					-- Manually select all text by setting cursor to end and selecting from start
+					if ValueTextBox and ValueTextBox.Parent then
+						ValueTextBox.CursorPosition = #ValueTextBox.Text + 1;
+						ValueTextBox.SelectionStart = 1;
+					end;
+				end;
 			end);
 		end;
 		
@@ -5547,7 +5577,13 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			
 			isEditing = false;
 			
-			if applyValue then
+			-- Disconnect escape handler
+			if escapeConnection then
+				escapeConnection:Disconnect();
+				escapeConnection = nil;
+			end;
+			
+			if applyValue and ValueTextBox then
 				-- Parse and validate input
 				local inputText = ValueTextBox.Text:gsub(Config.Type, ""):match("^%s*(.-)%s*$"); -- Remove type suffix and trim
 				local numValue = tonumber(inputText);
@@ -5592,6 +5628,15 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		Compkiller:_Input(ValueText, function()
 			StartEditing();
 		end);
+		
+		-- Mobile support: Also allow tap on ValueText
+		if Compkiller:_IsMobile() then
+			ValueText.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.Touch and not isEditing then
+					StartEditing();
+				end;
+			end);
+		end;
 
 		Compkiller:_Hover(SliderBar,function()
 			if Signal:GetValue() then
