@@ -1519,117 +1519,6 @@ function Compkiller:_Animation(Self: Instance , Info: TweenInfo , Property :{[K]
 	return Tween;
 end;
 
-function Compkiller:_AddSnowflakeParticles(SectionFrame: Frame)
-	-- Particle system for falling snowflakes on section backgrounds
-	local MAX_PARTICLES = 80;
-	local particles = {};
-	local particleContainer = Instance.new("Frame");
-	particleContainer.Name = Compkiller:_RandomString();
-	particleContainer.Parent = SectionFrame;
-	particleContainer.BackgroundTransparency = 1;
-	particleContainer.BorderSizePixel = 0;
-	particleContainer.Size = UDim2.new(1, 0, 1, 0);
-	particleContainer.ZIndex = SectionFrame.ZIndex - 1; -- Behind section content
-	particleContainer.ClipsDescendants = true;
-	
-	-- Initialize particles
-	local function initializeParticles()
-		local absSize = SectionFrame.AbsoluteSize;
-		if absSize.X <= 0 or absSize.Y <= 0 then
-			return; -- Wait for section to be sized
-		end
-		
-		for i = 1, MAX_PARTICLES do
-			local particle = Instance.new("TextLabel");
-			particle.Name = Compkiller:_RandomString();
-			particle.Parent = particleContainer;
-			particle.BackgroundTransparency = 1;
-			particle.BorderSizePixel = 0;
-			particle.Text = "•"; -- Snowflake character
-			particle.TextColor3 = Color3.fromRGB(255, 255, 255);
-			particle.TextSize = math.random(3, 8);
-			particle.TextTransparency = math.random(20, 60) / 100;
-			particle.Font = Enum.Font.Gotham;
-			particle.TextXAlignment = Enum.TextXAlignment.Center;
-			particle.TextYAlignment = Enum.TextYAlignment.Center;
-			particle.Size = UDim2.new(0, particle.TextSize, 0, particle.TextSize);
-			particle.ZIndex = particleContainer.ZIndex;
-			
-			-- Random starting position
-			particle.Position = UDim2.new(
-				0, math.random(0, math.max(1, absSize.X)),
-				0, math.random(0, math.max(1, absSize.Y))
-			);
-			
-			-- Particle data
-			local particleData = {
-				instance = particle,
-				velocity = -(math.random(20, 100) / 100.0 + 0.2), -- Falling speed (negative = down)
-				size = particle.TextSize,
-				life = 1.0
-			};
-			
-			table.insert(particles, particleData);
-		end
-	end;
-	
-	-- Update particles
-	local connection;
-	connection = RunService.Heartbeat:Connect(function(deltaTime)
-		if not SectionFrame.Parent or not SectionFrame:IsDescendantOf(game) then
-			connection:Disconnect();
-			for _, particleData in ipairs(particles) do
-				if particleData.instance then
-					particleData.instance:Destroy();
-				end
-			end
-			particleContainer:Destroy();
-			return;
-		end
-		
-		local absSize = SectionFrame.AbsoluteSize;
-		local absPos = SectionFrame.AbsolutePosition;
-		
-		for _, particleData in ipairs(particles) do
-			local particle = particleData.instance;
-			if particle and particle.Parent then
-				-- Update position (falling down)
-				local currentPos = particle.Position;
-				local newY = currentPos.Y.Offset + (particleData.velocity * deltaTime * 60.0);
-				
-				-- Wrap around when particle goes off screen
-				if newY < 0 then
-					newY = absSize.Y;
-					particle.Position = UDim2.new(
-						0, math.random(0, math.max(1, absSize.X)),
-						0, newY
-					);
-				elseif newY > absSize.Y then
-					newY = 0;
-					particle.Position = UDim2.new(
-						0, math.random(0, math.max(1, absSize.X)),
-						0, newY
-					);
-				else
-					particle.Position = UDim2.new(currentPos.X.Scale, currentPos.X.Offset, currentPos.Y.Scale, newY);
-				end
-			end
-		end
-	end);
-	
-	-- Initialize particles after section is sized
-	task.spawn(function()
-		-- Wait for section to have size
-		while SectionFrame.AbsoluteSize.X <= 0 or SectionFrame.AbsoluteSize.Y <= 0 do
-			task.wait(0.1);
-		end
-		task.wait(0.1); -- Extra delay to ensure layout is stable
-		initializeParticles();
-	end);
-	
-	return connection;
-end;
-
 function Compkiller:_Input(Frame : Frame , Callback : () -> ()) : TextButton
 	local Button = Instance.new('TextButton',Frame);
 
@@ -4811,8 +4700,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		local Tween = TweenInfo.new(0.3, Enum.EasingStyle.Quint);
 		
 		-- Track animation state to prevent conflicts
-		local isAnimating = false;
-		local pendingDelayThread = nil;
+		-- Store pending delay threads per element to properly cancel them
+		local pendingDelayThreads = {}; -- Map of rootElement -> thread
+		local currentToggleState = Config.Default; -- Track the actual toggle state
 
 		-- Function to update visibility of all dependent elements with fade animation
 		local function UpdateDependentElements(isEnabled)
@@ -4821,16 +4711,16 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				return;
 			end
 			
-			-- Cancel any pending delay threads (allow interrupting animations)
-			if pendingDelayThread then
-				task.cancel(pendingDelayThread);
-				pendingDelayThread = nil;
-			end
+			-- Update current state
+			currentToggleState = isEnabled;
 			
-			-- Reset animation flag if it was stuck
-			-- Allow new animations even if previous one didn't complete
-			isAnimating = true;
-			local animationComplete = false;
+			-- Cancel ALL pending delay threads first (critical for spam prevention)
+			for rootElement, thread in pairs(pendingDelayThreads) do
+				if thread then
+					task.cancel(thread);
+				end
+			end
+			pendingDelayThreads = {}; -- Clear all threads
 			
 			for _, data in ipairs(DependentElements) do
 				if not data or not data.element then continue end
@@ -4838,11 +4728,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				local rootElement = data.root
 				if not rootElement then continue end
 				
-				-- Ensure originalSize is captured
-				if not data.originalSize then
-					data.originalSize = rootElement.Size
-				end
-				
+				-- Immediately set correct state to prevent race conditions
+				-- If toggle is enabled, ensure element is visible
+				-- If toggle is disabled, ensure element will be hidden
 				if isEnabled then
 					-- FADE IN: Show element via transparency only
 					rootElement.Visible = true
@@ -4931,54 +4819,40 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 						end
 					end
 					
-					-- Hide after fade completes
-					pendingDelayThread = task.delay(0.3, function()
-						if rootElement then
+					-- Hide after fade completes - store thread per element
+					local delayThread = task.delay(0.3, function()
+						-- Double-check toggle state hasn't changed (prevent race condition)
+						if rootElement and currentToggleState == false then
 							rootElement.Visible = false
 							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
-						animationComplete = true;
-						isAnimating = false;
-						pendingDelayThread = nil;
+						-- Remove from pending threads
+						pendingDelayThreads[rootElement] = nil;
 					end)
+					pendingDelayThreads[rootElement] = delayThread;
 				end
-			end
-			
-			-- Reset animation flag after fade completes (for both in and out)
-			if isEnabled then
-				-- Fade in completes immediately (no delay needed)
-				task.delay(0.3, function()
-					animationComplete = true;
-					isAnimating = false;
-				end)
-			else
-				-- Fade out handled by pendingDelayThread above
-				-- But set a safety timeout in case delay fails
-				task.delay(0.5, function()
-					if not animationComplete then
-						isAnimating = false;
-						animationComplete = true;
-					end
-				end)
 			end
 		end;
 
-		-- Debounce to prevent rapid clicking (reduced time)
+		-- Debounce to prevent rapid clicking
 		local lastClickTime = 0;
-		local debounceTime = 0.05; -- 50ms debounce (reduced from 100ms)
+		local debounceTime = 0.1; -- 100ms debounce to prevent spam issues
+		local isProcessingClick = false; -- Prevent concurrent processing
 		
 		Toggle.Input.MouseButton1Click:Connect(function()
 			local currentTime = tick();
 			
-			-- Light debounce for very rapid clicks only
-			if currentTime - lastClickTime < debounceTime then
+			-- Prevent rapid clicks and concurrent processing
+			if isProcessingClick or (currentTime - lastClickTime < debounceTime) then
 				return;
 			end
 			
+			isProcessingClick = true;
 			lastClickTime = currentTime;
 			
-			-- Update toggle state immediately (don't block on animation)
+			-- Update toggle state immediately
 			Config.Default = not Config.Default;
+			currentToggleState = Config.Default; -- Update tracked state immediately
 
 			Toggle.ChangeValue(Config.Default);
 
@@ -4988,47 +4862,56 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			
 			-- Update dependent elements visibility (will handle animation state internally)
 			UpdateDependentElements(Config.Default);
+			
+			-- Allow next click after a short delay
+			task.delay(debounceTime, function()
+				isProcessingClick = false;
+			end);
 		end);
 
 		-- Method to add elements that should be shown when toggle is enabled
+		-- You can pass multiple elements: ShowWhenEnabled(toggle1, toggle2, slider1)
+		-- Or pass a table: ShowWhenEnabled({toggle1, toggle2, slider1})
+		-- Or chain calls: ShowWhenEnabled(toggle1):ShowWhenEnabled(toggle2)
 		function Args:ShowWhenEnabled(...)
 			local elements = {...};
+			
+			-- If first argument is a table (array), use that instead
+			-- Check if it's an array table (has numeric indices) vs object table
+			if #elements == 1 and typeof(elements[1]) == "table" then
+				local firstArg = elements[1];
+				-- Check if it's an array (has numeric keys) and not an element object (has Root property)
+				if #firstArg > 0 and not firstArg.Root then
+					elements = firstArg;
+				end;
+			end;
+			
 			for _, element in ipairs(elements) do
 				if element then
-					-- Get root element
+					-- Get root element and store original size
 					local rootElement = nil
+					local originalSize = nil
 					
 					if typeof(element) == "table" then
 						if element.Root and element.Root:IsA("GuiObject") then
 							rootElement = element.Root
+							originalSize = rootElement.Size
 						end
 					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
 						rootElement = element
+						originalSize = rootElement.Size
 					end
 					
 					if rootElement then
 						table.insert(DependentElements, {
 							element = element,
 							root = rootElement,
-							originalSize = nil -- Will be captured after layout settles
+							originalSize = originalSize
 						});
-					end
-				end
-			end
-			-- Capture original sizes and set initial visibility after layout settles
-			task.spawn(function()
-				task.wait() -- Wait for layout to calculate
-				-- Capture original sizes now that layout has settled (before hiding)
-				for _, data in ipairs(DependentElements) do
-					if data.root and not data.originalSize then
-						data.originalSize = data.root.Size
-					end
-				end
-				-- If toggle starts OFF, hide elements after capturing size
-				if not Config.Default then
-					for _, data in ipairs(DependentElements) do
-						local rootElement = data.root
-						if rootElement then
+						
+						-- If toggle starts OFF, immediately hide element (no animation)
+						-- This prevents elements from taking up space initially
+						if not Config.Default then
 							rootElement.Visible = false
 							rootElement.Size = UDim2.new(1, 0, 0, 0)
 							-- Set all children to fully transparent
@@ -5051,8 +4934,14 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							end
 						end
 					end
-				else
-					-- Only animate if toggle is ON
+				end
+			end
+			-- Set initial visibility based on current toggle state
+			-- Use task.wait to ensure elements are fully initialized
+			task.spawn(function()
+				task.wait() -- Wait one frame to ensure elements are created
+				-- Only animate if toggle is ON, otherwise already hidden
+				if Config.Default then
 					UpdateDependentElements(Config.Default);
 				end
 			end);
@@ -5060,6 +4949,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end;
 
 		function Args:SetValue(value)
+			-- Update tracked state immediately to prevent race conditions
+			currentToggleState = value;
+			
 			-- Don't block SetValue - allow programmatic changes
 			-- Animation state will be handled by UpdateDependentElements
 			
@@ -5268,6 +5160,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		end);
 
 		Args.Link = Compkiller:_LoadOption(Block);
+		
+		-- Add Root property for ShowWhenEnabled functionality
+		Args.Root = Block.Root;
 
 		function Args:GetValue()
 			return {
@@ -5603,71 +5498,21 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 		-- Click-to-edit functionality for slider value
 		local ValueTextBox = nil;
 		local isEditing = false;
+		local escapeConnection = nil;
 		
-		local function StartEditing()
-			if isEditing or not Signal:GetValue() then return end;
-			
-			isEditing = true;
-			
-			-- Create TextBox overlay
-			ValueTextBox = Instance.new("TextBox");
-			ValueTextBox.Name = Compkiller:_RandomString();
-			ValueTextBox.Parent = ValueText.Parent;
-			ValueTextBox.AnchorPoint = ValueText.AnchorPoint;
-			ValueTextBox.Position = ValueText.Position;
-			ValueTextBox.Size = ValueText.Size;
-			ValueTextBox.ZIndex = ValueText.ZIndex + 1;
-			ValueTextBox.BackgroundTransparency = 1;
-			ValueTextBox.BorderSizePixel = 0;
-			ValueTextBox.Font = ValueText.Font;
-			ValueTextBox.TextSize = ValueText.TextSize;
-			ValueTextBox.TextColor3 = ValueText.TextColor3;
-			ValueTextBox.TextXAlignment = Enum.TextXAlignment.Right;
-			ValueTextBox.Text = tostring(Config.Default);
-			ValueTextBox.ClearTextOnFocus = false;
-			ValueTextBox.TextTransparency = ValueText.TextTransparency;
-			
-			-- Add to color system
-			table.insert(Compkiller.Elements.SwitchColor, {
-				Element = ValueTextBox,
-				Property = 'TextColor3'
-			});
-			
-			-- Hide the label
-			ValueText.Visible = false;
-			
-			-- Connect TextBox events
-			ValueTextBox.FocusLost:Connect(function(enterPressed)
-				StopEditing(true); -- Apply value when focus is lost (Enter or click away)
-			end);
-			
-			-- Handle Escape key to cancel
-			local escapeConnection;
-			escapeConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-				if gameProcessed then return end;
-				if input.KeyCode == Enum.KeyCode.Escape and ValueTextBox and ValueTextBox:IsFocused() then
-					StopEditing(false); -- Cancel without applying
-					if escapeConnection then
-						escapeConnection:Disconnect();
-					end;
-				end;
-			end);
-			
-			-- Focus the TextBox
-			task.spawn(function()
-				task.wait();
-				ValueTextBox:CaptureFocus();
-				task.wait();
-				ValueTextBox:SelectAll();
-			end);
-		end;
-		
+		-- Define StopEditing first so it's available when StartEditing uses it
 		local function StopEditing(applyValue)
 			if not isEditing or not ValueTextBox then return end;
 			
 			isEditing = false;
 			
-			if applyValue then
+			-- Disconnect escape handler
+			if escapeConnection then
+				escapeConnection:Disconnect();
+				escapeConnection = nil;
+			end;
+			
+			if applyValue and ValueTextBox then
 				-- Parse and validate input
 				local inputText = ValueTextBox.Text:gsub(Config.Type, ""):match("^%s*(.-)%s*$"); -- Remove type suffix and trim
 				local numValue = tonumber(inputText);
@@ -5708,10 +5553,107 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			end;
 		end;
 		
+		-- Now define StartEditing after StopEditing so it can use StopEditing
+		local function StartEditing()
+			if isEditing or not Signal:GetValue() then return end;
+			
+			isEditing = true;
+			
+			-- Create TextBox overlay
+			ValueTextBox = Instance.new("TextBox");
+			ValueTextBox.Name = Compkiller:_RandomString();
+			ValueTextBox.Parent = ValueText.Parent;
+			ValueTextBox.AnchorPoint = ValueText.AnchorPoint;
+			ValueTextBox.Position = ValueText.Position;
+			ValueTextBox.Size = ValueText.Size;
+			ValueTextBox.ZIndex = ValueText.ZIndex + 1;
+			ValueTextBox.BackgroundTransparency = 1;
+			ValueTextBox.BorderSizePixel = 0;
+			ValueTextBox.Font = ValueText.Font;
+			ValueTextBox.TextSize = ValueText.TextSize;
+			ValueTextBox.TextColor3 = ValueText.TextColor3;
+			ValueTextBox.TextXAlignment = Enum.TextXAlignment.Right;
+			ValueTextBox.Text = tostring(Config.Default);
+			ValueTextBox.ClearTextOnFocus = false;
+			ValueTextBox.TextTransparency = ValueText.TextTransparency;
+			
+			-- Store original text color for hover effect
+			local originalTextColor = ValueText.TextColor3;
+			
+			-- Add to color system
+			table.insert(Compkiller.Elements.SwitchColor, {
+				Element = ValueTextBox,
+				Property = 'TextColor3'
+			});
+			
+			-- Hover effect - subtle highlight
+			Compkiller:_Hover(ValueTextBox, function()
+				-- Hover in - subtle highlight
+				if ValueTextBox and ValueTextBox.Parent then
+					Compkiller:_Animation(ValueTextBox, TweenInfo.new(0.2), {
+						TextColor3 = Compkiller.Colors.Highlight
+					});
+				end;
+			end, function()
+				-- Hover out - back to original
+				if ValueTextBox and ValueTextBox.Parent then
+					Compkiller:_Animation(ValueTextBox, TweenInfo.new(0.2), {
+						TextColor3 = originalTextColor
+					});
+				end;
+			end);
+			
+			-- Hide the label
+			ValueText.Visible = false;
+			
+			-- Connect TextBox events
+			if ValueTextBox then
+				ValueTextBox.FocusLost:Connect(function(enterPressed)
+					if ValueTextBox and ValueTextBox.Parent then
+						StopEditing(true); -- Apply value when focus is lost
+					end;
+				end);
+			end;
+			
+			-- Handle Escape key to cancel
+			if escapeConnection then
+				escapeConnection:Disconnect();
+			end;
+			escapeConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+				if gameProcessed then return end;
+				if input.KeyCode == Enum.KeyCode.Escape and ValueTextBox and ValueTextBox.Parent and ValueTextBox:IsFocused() then
+					StopEditing(false); -- Cancel without applying
+				end;
+			end);
+			
+			-- Focus the TextBox and select text manually (SelectAll doesn't exist in Roblox)
+			task.spawn(function()
+				task.wait(0.1);
+				if ValueTextBox and ValueTextBox.Parent then
+					ValueTextBox:CaptureFocus();
+					task.wait(0.05);
+					-- Manually select all text by setting cursor to end and selecting from start
+					if ValueTextBox and ValueTextBox.Parent then
+						ValueTextBox.CursorPosition = #ValueTextBox.Text + 1;
+						ValueTextBox.SelectionStart = 1;
+					end;
+				end;
+			end);
+		end;
+		
 		-- Click on ValueText to edit (works for both mouse and touch)
 		Compkiller:_Input(ValueText, function()
 			StartEditing();
 		end);
+		
+		-- Mobile support: Also allow tap on ValueText
+		if Compkiller:_IsMobile() then
+			ValueText.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.Touch and not isEditing then
+					StartEditing();
+				end;
+			end);
+		end;
 
 		Compkiller:_Hover(SliderBar,function()
 			if Signal:GetValue() then
@@ -9758,9 +9700,6 @@ function Compkiller.new(Config : Window)
 
 			UICorner.CornerRadius = UDim.new(0, 6)
 			UICorner.Parent = Section
-			
-			-- Add snowflake particle background effect
-			Compkiller:_AddSnowflakeParticles(Section);
 
 			UIStroke.Color = Compkiller.Colors.StrokeColor
 			UIStroke.Parent = Section
