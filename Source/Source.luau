@@ -4734,7 +4734,13 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				if isEnabled then
 					-- FADE IN: Show element via transparency only
 					rootElement.Visible = true
-					rootElement.Size = data.originalSize -- Keep original size, no size animation
+					-- Use original size if available, otherwise use current size
+					if data.originalSize then
+						rootElement.Size = data.originalSize -- Keep original size, no size animation
+					else
+						-- If originalSize not captured yet, capture it now
+						data.originalSize = rootElement.Size
+					end
 					
 					-- Fade in all visual elements via transparency
 					for _, child in ipairs(rootElement:GetDescendants()) do
@@ -4888,32 +4894,43 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			
 			for _, element in ipairs(elements) do
 				if element then
-					-- Get root element and store original size
+					-- Get root element
 					local rootElement = nil
-					local originalSize = nil
 					
 					if typeof(element) == "table" then
 						if element.Root and element.Root:IsA("GuiObject") then
 							rootElement = element.Root
-							originalSize = rootElement.Size
 						end
 					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
 						rootElement = element
-						originalSize = rootElement.Size
 					end
 					
-					if rootElement then
-						table.insert(DependentElements, {
-							element = element,
-							root = rootElement,
-							originalSize = originalSize
-						});
-						
-						-- If toggle starts OFF, immediately hide element (no animation)
-						-- This prevents elements from taking up space initially
-						if not Config.Default then
-							rootElement.Visible = false
-							rootElement.Size = UDim2.new(1, 0, 0, 0)
+				if rootElement then
+					-- Capture original size immediately (before any modifications)
+					local originalSize = rootElement.Size
+					
+					-- Store element info
+					local elementData = {
+						element = element,
+						root = rootElement,
+						originalSize = originalSize
+					}
+					table.insert(DependentElements, elementData);
+					
+					-- Wait for layout to complete, then update original size if needed
+					task.spawn(function()
+						task.wait() -- Wait for layout to complete
+						if rootElement and rootElement.Parent and rootElement.Visible then
+							-- Only update if element is still visible and laid out
+							elementData.originalSize = rootElement.Size
+						end
+					end);
+					
+					-- If toggle starts OFF, immediately hide element (no animation)
+					-- This prevents elements from taking up space initially
+					if not Config.Default then
+						rootElement.Visible = false
+						rootElement.Size = UDim2.new(1, 0, 0, 0)
 							-- Set all children to fully transparent
 							for _, child in ipairs(rootElement:GetDescendants()) do
 								if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
