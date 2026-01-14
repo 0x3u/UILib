@@ -4838,6 +4838,11 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				local rootElement = data.root
 				if not rootElement then continue end
 				
+				-- Ensure originalSize is captured
+				if not data.originalSize then
+					data.originalSize = rootElement.Size
+				end
+				
 				if isEnabled then
 					-- FADE IN: Show element via transparency only
 					rootElement.Visible = true
@@ -4928,9 +4933,9 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 					
 					-- Hide after fade completes
 					pendingDelayThread = task.delay(0.3, function()
-						if rootElement and data.originalSize then
+						if rootElement then
 							rootElement.Visible = false
-							rootElement.Size = UDim2.new(data.originalSize.X.Scale, data.originalSize.X.Offset, 0, 0) -- Set height to 0 after hidden for section resize
+							rootElement.Size = UDim2.new(1, 0, 0, 0) -- Set to 0 after hidden for section resize
 						end
 						animationComplete = true;
 						isAnimating = false;
@@ -4990,32 +4995,42 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			local elements = {...};
 			for _, element in ipairs(elements) do
 				if element then
-					-- Get root element and capture size immediately
+					-- Get root element
 					local rootElement = nil
-					local originalSize = nil
 					
 					if typeof(element) == "table" then
 						if element.Root and element.Root:IsA("GuiObject") then
 							rootElement = element.Root
-							originalSize = rootElement.Size
 						end
 					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
 						rootElement = element
-						originalSize = rootElement.Size
 					end
 					
 					if rootElement then
 						table.insert(DependentElements, {
 							element = element,
 							root = rootElement,
-							originalSize = originalSize
+							originalSize = nil -- Will be captured after layout settles
 						});
-						
-						-- If toggle starts OFF, immediately hide element (no animation)
-						-- This prevents elements from taking up space initially
-						if not Config.Default then
+					end
+				end
+			end
+			-- Capture original sizes and set initial visibility after layout settles
+			task.spawn(function()
+				task.wait() -- Wait for layout to calculate
+				-- Capture original sizes now that layout has settled (before hiding)
+				for _, data in ipairs(DependentElements) do
+					if data.root and not data.originalSize then
+						data.originalSize = data.root.Size
+					end
+				end
+				-- If toggle starts OFF, hide elements after capturing size
+				if not Config.Default then
+					for _, data in ipairs(DependentElements) do
+						local rootElement = data.root
+						if rootElement then
 							rootElement.Visible = false
-							rootElement.Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, 0, 0)
+							rootElement.Size = UDim2.new(1, 0, 0, 0)
 							-- Set all children to fully transparent
 							for _, child in ipairs(rootElement:GetDescendants()) do
 								if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
@@ -5036,8 +5051,11 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							end
 						end
 					end
+				else
+					-- Only animate if toggle is ON
+					UpdateDependentElements(Config.Default);
 				end
-			end
+			end);
 			return Args;
 		end;
 
