@@ -4733,12 +4733,16 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 				-- If toggle is disabled, ensure element will be hidden
 				if isEnabled then
 					-- FADE IN: Show element via transparency only
+					-- Ensure element maintains correct parent relationship
+					if data.originalParent and rootElement.Parent ~= data.originalParent then
+						rootElement.Parent = data.originalParent
+					end
 					rootElement.Visible = true
-					-- Use original size if available, otherwise use current size
+					-- Use original size if available, otherwise keep current size
 					if data.originalSize then
 						rootElement.Size = data.originalSize -- Keep original size, no size animation
 					else
-						-- If originalSize not captured yet, capture it now
+						-- If originalSize not set yet, capture it now
 						data.originalSize = rootElement.Size
 					end
 					
@@ -4894,45 +4898,60 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			
 			for _, element in ipairs(elements) do
 				if element then
-					-- Get root element
+					-- Get root element and store original size
 					local rootElement = nil
+					local originalSize = nil
+					local originalParent = nil
 					
 					if typeof(element) == "table" then
 						if element.Root and element.Root:IsA("GuiObject") then
 							rootElement = element.Root
+							originalSize = rootElement.Size
+							originalParent = rootElement.Parent
 						end
 					elseif typeof(element) == "Instance" and element:IsA("GuiObject") then
 						rootElement = element
+						originalSize = rootElement.Size
+						originalParent = rootElement.Parent
 					end
 					
-				if rootElement then
-					-- Capture original size immediately (before any modifications)
-					local originalSize = rootElement.Size
+					if rootElement then
+						-- Store element data with original parent to preserve hierarchy
+						table.insert(DependentElements, {
+							element = element,
+							root = rootElement,
+							originalSize = originalSize,
+							originalParent = originalParent
+						});
+					end
+				end
+			end
+			
+			-- Wait for elements to be fully laid out before manipulating them
+			-- This ensures UIListLayout has properly positioned them
+			task.spawn(function()
+				task.wait() -- Wait for layout to complete
+				
+				-- Ensure all elements maintain their correct parent relationship
+				for _, data in ipairs(DependentElements) do
+					if data.root and data.originalParent and data.root.Parent ~= data.originalParent then
+						data.root.Parent = data.originalParent
+					end
 					
-					-- Store element info
-					local elementData = {
-						element = element,
-						root = rootElement,
-						originalSize = originalSize
-					}
-					table.insert(DependentElements, elementData);
-					
-					-- Wait for layout to complete, then update original size if needed
-					task.spawn(function()
-						task.wait() -- Wait for layout to complete
-						if rootElement and rootElement.Parent and rootElement.Visible then
-							-- Only update if element is still visible and laid out
-							elementData.originalSize = rootElement.Size
-						end
-					end);
-					
-					-- If toggle starts OFF, immediately hide element (no animation)
-					-- This prevents elements from taking up space initially
-					if not Config.Default then
-						rootElement.Visible = false
-						rootElement.Size = UDim2.new(1, 0, 0, 0)
+					-- Capture final size after layout
+					if data.root and data.root.Parent then
+						data.originalSize = data.root.Size
+					end
+				end
+				
+				-- If toggle starts OFF, hide elements now that they're properly laid out
+				if not Config.Default then
+					for _, data in ipairs(DependentElements) do
+						if data.root then
+							data.root.Visible = false
+							data.root.Size = UDim2.new(1, 0, 0, 0)
 							-- Set all children to fully transparent
-							for _, child in ipairs(rootElement:GetDescendants()) do
+							for _, child in ipairs(data.root:GetDescendants()) do
 								if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
 									child:SetAttribute("OriginalTextTrans", child.TextTransparency)
 									child.TextTransparency = 1
@@ -4951,14 +4970,8 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 							end
 						end
 					end
-				end
-			end
-			-- Set initial visibility based on current toggle state
-			-- Use task.wait to ensure elements are fully initialized
-			task.spawn(function()
-				task.wait() -- Wait one frame to ensure elements are created
-				-- Only animate if toggle is ON, otherwise already hidden
-				if Config.Default then
+				else
+					-- Toggle starts ON, just update dependent elements
 					UpdateDependentElements(Config.Default);
 				end
 			end);
