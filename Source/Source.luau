@@ -3607,6 +3607,15 @@ function Compkiller:_DrawKeybinds(Window: ScreenGui)
 end;
 
 function Compkiller:_KeybindHandler(Parent: Frame , ObjectType: string , ElementAPI: Toggle & Slider , Signal , Zindex: number , ElementCFG: Slider)
+	-- Keybind handler disabled for toggles - return empty API
+	if ObjectType == "Toggle" then
+		return {
+			GetSettings = function() return {} end,
+			LoadSettings = function() end,
+			Update = function() end,
+		};
+	end;
+	
 	local Window = Compkiller:_GetWindowFromElement(Parent);
 	local KB_Signal = Compkiller.__SIGNAL(false);
 	local SubIndex = math.random(40,100);
