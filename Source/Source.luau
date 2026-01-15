@@ -5015,11 +5015,11 @@ function Compkiller:_LoadElement(Parent: Frame , EnabledLine: boolean , Signal ,
 			Compkiller.Flags[Config.Flag] = Args;
 		end;
 
-		if not DisableStackKeybind then
-			local AutoKeybind = Compkiller:_KeybindHandler(Block.Root , "Toggle" , Args , Signal , Zindex , Config);
-
-			Args.AutoKeybind = AutoKeybind;
-		end;
+		-- Keybind handler disabled - no right-click popup for toggles
+		-- if not DisableStackKeybind then
+		-- 	local AutoKeybind = Compkiller:_KeybindHandler(Block.Root , "Toggle" , Args , Signal , Zindex , Config);
+		-- 	Args.AutoKeybind = AutoKeybind;
+		-- end;
 
 		return Args;
 	end;
