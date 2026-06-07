@@ -10795,10 +10795,32 @@ function Compkiller:Loader(IconId,Duration)
 	end);
 
 	return {
-		yield = function()
-			return Event.Event:Wait();
-		end	
-	};
+    yield = function()
+        return Event.Event:Wait();
+    end,
+    FadeInWindow = function(self, Window)
+        Event.Event:Wait();
+        if not Window then return end;
+
+        local Screen = Window.Root;
+        Screen.Enabled = false;
+
+        task.wait(0.1);
+
+        Screen.Enabled = true;
+
+        local MainFrame = Screen:FindFirstChildWhichIsA("Frame");
+        if MainFrame then
+            MainFrame.BackgroundTransparency = 1;
+            
+            Compkiller:_Animation(MainFrame, TweenInfo.new(0.8, Enum.EasingStyle.Quint), {
+                BackgroundTransparency = 0
+            });
+        end;
+
+        Window:Toggle(true);
+    end,
+};
 end;
 
 function Compkiller.newNotify()
