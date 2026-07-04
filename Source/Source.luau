@@ -3945,15 +3945,19 @@ function Compkiller:_LoadOption(Value , TabSignal)
 				end;
 			end;
 
-			local KeyName = (typeof(Selected) == "string" and Selected) or Selected.Name;
+local KeyName = (typeof(Selected) == "string" and Selected) or Selected.Name;
 
-			Config.Default = KeyName;
+if KeyName == "Escape" then
+	KeyName = nil;
+end;
 
-			Keybind.SetValue(Selected);
+Config.Default = KeyName;
 
-			IsBinding = false;
+Keybind.SetValue(KeyName);
 
-			Config.Callback(KeyName);
+IsBinding = false;
+
+Config.Callback(KeyName);
 		end);
 
 		local Args = {};
