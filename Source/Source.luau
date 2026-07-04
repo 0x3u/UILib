@@ -3839,21 +3839,17 @@ function Compkiller:_KeybindHandler(Parent: Frame , ObjectType: string , Element
 		APIRef.Update();
 	end;
 
-	APIRef.Thread = task.spawn(function()
-		while true do task.wait(0.01)
-			if APIRef.Mode ~= 1 then
-				if ElementAPI:GetValue() == APIRef.On then
-					KeybindFrame:SetVisible(true);
-				else
-					KeybindFrame:SetVisible(false);
-				end;
+APIRef.Thread = task.spawn(function()
+	while true do task.wait(0.01)
+		if APIRef.Mode ~= 1 and APIRef.Keybind then
+			KeybindFrame:SetVisible(true);
 
-				APIRef.Update();
-			else
-				KeybindFrame:SetVisible(false);
-			end;
+			APIRef.Update();
+		else
+			KeybindFrame:SetVisible(false);
 		end;
-	end)
+	end;
+end)
 
 	Parent.InputEnded:Connect(function(Input,Typing)
 		if Input.UserInputType == Enum.UserInputType.MouseButton2 and not Typing then
