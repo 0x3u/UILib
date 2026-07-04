@@ -3738,10 +3738,10 @@ function Compkiller:_KeybindHandler(Parent: Frame , ObjectType: string , Element
 
 	local Flag = {};
 
-	APIRef.Update = function()
-		KeybindFrame:SetName(APIRef.Name);
-		KeybindFrame:SetType(ModeEnum[APIRef.Mode]);
-	end
+APIRef.Update = function()
+	KeybindFrame:SetName(APIRef.Keybind and (APIRef.Name.." ["..tostring(APIRef.Keybind).."]") or APIRef.Name);
+	KeybindFrame:SetType(ModeEnum[APIRef.Mode]);
+end
 
 	local ElementAPIs = Compkiller:_LoadElement(ElementObjs , true , KB_Signal , true);
 
